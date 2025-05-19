@@ -1,0 +1,185 @@
+package com.example.twitterclone;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.ModelAndView;
+
+import javax.annotation.PreDestroy;
+import javax.sql.DataSource;
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@SpringBootApplication
+public class TwitterCloneApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(TwitterCloneApplication.class, args);
+    }
+
+    @Controller
+    public static class TwitterController {
+        private final DataSource dataSource;
+
+        public TwitterController(DataSource dataSource) {
+            this.dataSource = dataSource;
+        }
+
+        @GetMapping("/")
+        public String home() {
+            return "index";
+        }
+
+        @PostMapping("/signup")
+        @ResponseBody
+        public String signup(@RequestParam String username, @RequestParam String password) {
+            try (Connection conn = dataSource.getConnection()) {
+                String sql = "INSERT INTO users (id, username, password) VALUES (?, ?, ?)";
+                try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                    stmt.setString(1, UUID.randomUUID().toString());
+                    stmt.setString(2, username);
+                    stmt.setString(3, password);
+                    stmt.executeUpdate();
+                }
+            } catch (SQLException e) {
+                return "Error: " + e.getMessage();
+            }
+            return "User  registered successfully!";
+        }
+
+        @PostMapping("/login")
+        @ResponseBody
+        public String login(@RequestParam String username, @RequestParam String password) {
+            try (Connection conn = dataSource.getConnection()) {
+                String sql = "SELECT * FROM users WHERE username = ? AND password = ?";
+                try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                    stmt.setString(1, username);
+                    stmt.setString(2, password);
+                    ResultSet rs = stmt.executeQuery();
+                    if (rs.next()) {
+                        return "Login successful!";
+                    }
+                }
+            } catch (SQLException e) {
+                return "Error: " + e.getMessage();
+            }
+            return "Invalid credentials!";
+        }
+
+        @PostMapping("/tweet")
+        @ResponseBody
+        public String createTweet(@RequestParam String username, @RequestParam String content) {
+            try (Connection conn = dataSource.getConnection()) {
+                String sql = "INSERT INTO tweets (id, username, content) VALUES (?, ?, ?)";
+                try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                    stmt.setString(1, UUID.randomUUID().toString());
+                    stmt.setString(2, username);
+                    stmt.setString(3, content);
+                    stmt.executeUpdate();
+                }
+            } catch (SQLException e) {
+                return "Error: " + e.getMessage();
+            }
+            return "Tweet created successfully!";
+        }
+
+        @GetMapping("/tweets")
+        @ResponseBody
+        public List<String> getTweets() {
+            List<String> tweets = new ArrayList<>();
+            try (Connection conn = dataSource.getConnection()) {
+                String sql = "SELECT * FROM tweets ORDER BY created_at DESC";
+                try (Statement stmt = conn.createStatement()) {
+                    ResultSet rs = stmt.executeQuery(sql);
+                    while (rs.next()) {
+                        tweets.add(rs.getString("content"));
+                    }
+                }
+            } catch (SQLException e) {
+                tweets.add("Error: " + e.getMessage());
+            }
+            return tweets;
+        }
+
+        @GetMapping(value = "/index", produces = MediaType.TEXT_HTML_VALUE)
+        @ResponseBody
+        public String indexPage() {
+            return """
+                    <!DOCTYPE html>
+                    <html lang="en">
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>Twitter Clone</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; }
+                            #tweets { margin-top: 20px; }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>Twitter Clone</h1>
+                        <h2>Signup</h2>
+                        <input type="text" id="signupUsername" placeholder="Username">
+                        <input type="password" id="signupPassword" placeholder="Password">
+                        <button onclick="signup()">Signup</button>
+                        <h2>Login</h2>
+                        <input type="text" id="loginUsername" placeholder="Username">
+                        <input type="password" id="loginPassword" placeholder="Password">
+                        <button onclick="login()">Login</button>
+                        <h2>Create Tweet</h2>
+                        <input type="text" id="tweetContent" placeholder="What's happening?">
+                        <button onclick="createTweet()">Tweet</button>
+                        <div id="tweets"></div>
+                        <script>
+                            function signup() {
+                                const username = document.getElementById('signupUsername').value;
+                                const password = document.getElementById('signupPassword').value;
+                                fetch('/signup', { method: 'POST', body: new URLSearchParams({ username, password }) })
+                                    .then(res => res.text())
+                                    .then(alert);
+                            }
+                            function login() {
+                                const username = document.getElementById('loginUsername').value;
+                                const password = document.getElementById('loginPassword').value;
+                                fetch('/login', { method: 'POST', body: new URLSearchParams({ username, password }) })
+                                    .then(res => res.text())
+                                    .then(alert);
+                            }
+                            function createTweet() {
+                                const content = document.getElementById('tweetContent').value;
+                                const username = document.getElementById('loginUsername').value; // Assuming user is logged in
+                                fetch('/tweet', { method: 'POST', body: new URLSearchParams({ username, content }) })
+                                    .then(res => res.text())
+                                    .then(alert);
+                            }
+                            function loadTweets() {
+                                fetch('/tweets')
+                                    .then(res => res.json())
+                                    .then(tweets => {
+                                        const tweetsDiv = document.getElementById('tweets');
+                                        tweetsDiv.innerHTML = '';
+                                        tweets.forEach(tweet => {
+                                            const p = document.createElement('p');
+                                            p.textContent = tweet;
+                                            tweetsDiv.appendChild(p);
+                                        });
+                                    });
+                            }
+                            setInterval(loadTweets, 5000); // Load tweets every 5 seconds
+                        </script>
+                    </body>
+                    </html>
+                    """;
+        }
+
+        @PreDestroy
+        public void cleanup() {
+            // Cleanup resources if needed
+        }
+    }
+}
